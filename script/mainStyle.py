@@ -9,7 +9,11 @@ def draw_focused(self:bf.InteractiveWidget,camera:bf.Camera):
     pos = camera.world_to_screen_point(self.get_padded_rect().move(-4+delta,0).midleft)
     pygame.draw.circle(camera.surface,"white",pos,2)
     pygame.draw.circle(camera.surface,bf.color.ORANGE_SHADE,pos,3,1)
-    camera.surface.fill((40,40,40),camera.world_to_screen(self.rect),special_flags=pygame.BLEND_ADD)
+    r = self.rect.copy()
+    # if isinstance(self,bf.Button):
+    #     r.height -= self.relief
+    #     r.bottom = self.rect.bottom
+    # camera.surface.fill((40,40,40),camera.world_to_screen(r),special_flags=pygame.BLEND_ADD)
 
 
 
