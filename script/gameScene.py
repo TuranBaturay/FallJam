@@ -102,6 +102,7 @@ class IsoLevel(bf.Drawable):
                 for x in range(max(0, diag - self.height + 1), min(self.width, diag + 1)):
                     y = diag - x
                     if z not in self.tiles[y][x]:
+                        yield((x,y,z),None)
                         continue
                     yield ((x,y,z),self.tiles[y][x][z])
 
@@ -115,27 +116,24 @@ class IsoLevel(bf.Drawable):
         Yields:
             tuple: (surface, screen_position) for visible tiles.
         """
-        player_round = round(self.player.grid_position[0]), round(self.player.grid_position[1])
+        player_round = (
+            round(self.player.grid_position[0]),
+            round(self.player.grid_position[1]),
+            round(self.player.grid_position[2])
+        )
         max_depth = self.depth - 1
 
         for value in self.iterate():
             (x, y, z), tile = value
-
-            # Skip if there are tiles above that completely cover this one
-            if z < max_depth and any(k > z for k in self.tiles[y][x].keys()):
-                continue
-
-            # Convert grid position to isometric screen position
             pos = self.grid_to_iso(x, y, z)
 
             # Yield tile surface and screen position
-            yield (self.tile_surf, camera.world_to_screen_point(pos))
+            if tile:
+                if not (z < max_depth and any(k > z for k in self.tiles[y][x].keys())):
+                    yield (self.tile_surf, camera.world_to_screen_point(pos))
 
-            if player_round == (x, y):
-                # Ensure there are tiles at the current (x, y)
-                top_z = max(self.tiles[y][x].keys(), default=-1)  # Default to -1 if no tiles
-                if self.player.grid_position[2] >= top_z-1:
-                    yield from self.player._my_draw(camera)
+            if player_round[:2] == (x, y):
+                yield from self.player._my_draw(camera)
 
 
     def generate_draw_list_with_info(self, camera: bf.Camera):
@@ -148,32 +146,27 @@ class IsoLevel(bf.Drawable):
         Yields:
             tuple: (surface, screen_position) for visible tiles.
         """
-        player_drawn = False
-        player_round = round(self.player.grid_position[0]), round(self.player.grid_position[1]),round(self.player.grid_position[2])
+        player_round = (
+            round(self.player.grid_position[0]),
+            round(self.player.grid_position[1]),
+            round(self.player.grid_position[2])
+        )
         max_depth = self.depth - 1
 
         for value in self.iterate():
             (x, y, z), tile = value
-
-            # Skip if there are tiles above that completely cover this one
-            # if z < max_depth and any(k > z for k in self.tiles[y][x].keys()):
-            #     continue
-
-            # Convert grid position to isometric screen position
             pos = self.grid_to_iso(x, y, z)
 
             # Yield tile surface and screen position
-            yield (self.tile_surf, camera.world_to_screen_point(pos),(x,y,z))
+            if tile:
+                if not (z < max_depth and any(k > z for k in self.tiles[y][x].keys())):
+                    # yield (self.tile_surf, camera.world_to_screen_point(pos))
+                    if camera.intersects((*pos,*self.tile_surf.get_size())):
+                        yield (self.tile_surf, camera.world_to_screen_point(pos),(x,y,z))
 
-            if player_round[:2] == (x, y) :
-                # yield (self.tile_surf, camera.world_to_screen_point(pos),(x,y,z))
-                # Ensure there are tiles at the current (x, y)
-                # top_z = max(self.tiles[y][x].keys(), default=-1)  # Default to -1 if no tiles
-                # if player_round[2] >= top_z-1:
-                if not player_drawn:
-                    val = next(self.player._my_draw(camera))
-                    player_drawn= True
-                    yield (*val,(x,y,z))
+            if player_round[:2] == (x, y):
+                # yield from self.player._my_draw(camera)
+                yield from self.player._my_draw_with_info(camera)
 
     def draw(self, camera):
         # print("-" * 30)
@@ -182,18 +175,28 @@ class IsoLevel(bf.Drawable):
 
         # Sort the tiles by z-layer (ascending).
         draw_list.sort(key=lambda val: val[2][2])  # Sort by the z-value.
-
+        old_z = draw_list[0][2][2]
+        counter = 0
         for val in draw_list:
-            tile_surface, position, z_value = val
-
-            # Apply shadow effect for this z-layer.
-            camera.surface.fill((1, 1, 1), special_flags=pygame.BLEND_RGB_SUB)
+            tile_surface, position, pos3d = val
+            if old_z != pos3d[2]:
+                # Apply shadow effect for this z-layer.
+                camera.surface.fill((30, 10*pos3d[1], 10*pos3d[1]), special_flags=pygame.BLEND_RGB_SUB)
+                old_z = pos3d[2]
 
             # Draw the tile.
             camera.surface.blit(tile_surface, position)
 
+            if pos3d == self.player.grid_position:
+                pygame.draw.rect(camera.surface,"white",(*camera.world_to_screen_point(self.grid_to_iso(*pos3d)),10,10))
+            else:
+                pygame.draw.rect(camera.surface,"yellow",(*camera.world_to_screen_point(self.grid_to_iso(*pos3d)),10,10))
+            counter += 1
+        print(counter)
             # Debug output to verify z-layer drawing order.
             # print(z_value)
+
+        # camera.surface.fblits(self.generate_draw_list(camera))
 
 class Player(bf.Character):
     def __init__(self,level:IsoLevel):
@@ -209,8 +212,8 @@ class Player(bf.Character):
                 a.replace_key_control(pygame.K_a,pygame.K_q)
         
         self.actions.add_actions(
-            bf.Action("fly-up").add_key_control(pygame.K_KP8).set_holding(),
-            bf.Action("fly-down").add_key_control(pygame.K_KP2).set_holding(),
+            bf.Action("fly-up").add_key_control(pygame.K_8).set_holding(),
+            bf.Action("fly-down").add_key_control(pygame.K_2).set_holding(),
             )
 
         self.grid_position = [0,0,0]
@@ -234,6 +237,7 @@ class Player(bf.Character):
     def do_reset_actions(self):
         self.actions.reset()
     def do_update(self, dt):
+        old_pos = self.grid_position.copy()
         if self.actions.is_active("up"):
             self.grid_position[1] = max(0,self.grid_position[1]-self.speed*dt)
         if self.actions.is_active("down"):
@@ -246,6 +250,12 @@ class Player(bf.Character):
             self.grid_position[2] +=self.speed*dt
         if self.actions.is_active("fly-down"):
             self.grid_position[2] -=self.speed*dt
+                    
+        val = self.level.get_at(*[int(i) for i in self.grid_position])
+        while (val is not None):
+            self.grid_position[2] = int(self.grid_position[2])+1
+            val = self.level.get_at(*[int(i) for i in self.grid_position])
+        self.grid_position[2] -= 1        
         self.rect.midbottom = self.level.grid_to_iso(*self.grid_position[:2],self.grid_position[2]+self.height)
         self.rect.move_ip(gconst.TILE_WIDTH//2,gconst.TILE_HEIGHT//2 - 16)
 
@@ -254,6 +264,12 @@ class Player(bf.Character):
         self.rect.midbottom = self.level.grid_to_iso(*self.grid_position[:2],self.grid_position[2]+self.height)
         self.rect.move_ip(gconst.TILE_WIDTH//2,gconst.TILE_HEIGHT//2 - 16)
         yield (self.get_current_frame(),camera.world_to_screen_point(self.rect.topleft))
+        # camera.surface.blit(self.get_current_frame(),camera.world_to_screen_point(self.rect.topleft))
+        
+    def _my_draw_with_info(self,camera:bf.Camera):
+        self.rect.midbottom = self.level.grid_to_iso(*self.grid_position[:2],self.grid_position[2]+self.height)
+        self.rect.move_ip(gconst.TILE_WIDTH//2,gconst.TILE_HEIGHT//2 - 16)
+        yield (self.get_current_frame(),camera.world_to_screen_point(self.rect.topleft),self.grid_position)
         # camera.surface.blit(self.get_current_frame(),camera.world_to_screen_point(self.rect.topleft))
 
     def draw(self, camera):
@@ -279,6 +295,8 @@ class GameScene(bf.Scene):
                 for x in range(width):
                     # Use the noise value as the "value" for set_at
                     value = noise_array_normalized[x, y, z]
+                    if z == 0:
+                        value = 0
                     if value < 0.5:
                         self.level.set_at(x, y, z, 0)
 
@@ -290,7 +308,7 @@ class GameScene(bf.Scene):
         self.camera.set_follow_point_func(lambda :self.player.rect.center)
         self.camera.set_follow_speed(0.8)
         self.camera.set_follow_damping(2)
-        self.camera.zoom_by(-0.5)
+        # self.camera.zoom_by(-0.5)
         self.add_world_entity(self.player)
         self.camera.set_center(*self.player.rect.center)
         self.fx_surf = pygame.Surface(self.camera.rect.size)
@@ -299,7 +317,7 @@ class GameScene(bf.Scene):
 
 
 
-        bf.Timer(1,lambda : print("Hello pygame-ce"),True).start()
+        # bf.Timer(1,lambda : print("Hello pygame-ce"),True).start()
 
 
         d = bf.BasicDebugger()
