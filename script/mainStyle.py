@@ -22,7 +22,7 @@ class MainStyle(bf.Style):
         if isinstance(w,bf.InteractiveWidget):
             w.draw_focused = MethodType(draw_focused,w)
         if isinstance(w,bf.Shape):
-            w.set_padding(4)
+            w.set_padding(2)
             w.set_color(bf.color.ORANGE)
             w.set_outline_color(bf.color.ORANGE_SHADE)
             w.set_border_radius(2)

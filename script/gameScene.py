@@ -192,7 +192,6 @@ class IsoLevel(bf.Drawable):
             else:
                 pygame.draw.rect(camera.surface,"yellow",(*camera.world_to_screen_point(self.grid_to_iso(*pos3d)),10,10))
             counter += 1
-        print(counter)
             # Debug output to verify z-layer drawing order.
             # print(z_value)
 
@@ -257,18 +256,17 @@ class Player(bf.Character):
             val = self.level.get_at(*[int(i) for i in self.grid_position])
         self.grid_position[2] -= 1        
         self.rect.midbottom = self.level.grid_to_iso(*self.grid_position[:2],self.grid_position[2]+self.height)
-        self.rect.move_ip(gconst.TILE_WIDTH//2,gconst.TILE_HEIGHT//2 - 16)
 
-    
+
     def _my_draw(self,camera:bf.Camera):
         self.rect.midbottom = self.level.grid_to_iso(*self.grid_position[:2],self.grid_position[2]+self.height)
-        self.rect.move_ip(gconst.TILE_WIDTH//2,gconst.TILE_HEIGHT//2 - 16)
+        # self.rect.move_ip(gconst.TILE_WIDTH//2,gconst.TILE_HEIGHT//2 - 16)
         yield (self.get_current_frame(),camera.world_to_screen_point(self.rect.topleft))
         # camera.surface.blit(self.get_current_frame(),camera.world_to_screen_point(self.rect.topleft))
         
     def _my_draw_with_info(self,camera:bf.Camera):
         self.rect.midbottom = self.level.grid_to_iso(*self.grid_position[:2],self.grid_position[2]+self.height)
-        self.rect.move_ip(gconst.TILE_WIDTH//2,gconst.TILE_HEIGHT//2 - 16)
+        # self.rect.move_ip(gconst.TILE_WIDTH//2,gconst.TILE_HEIGHT//2 - 16)
         yield (self.get_current_frame(),camera.world_to_screen_point(self.rect.topleft),self.grid_position)
         # camera.surface.blit(self.get_current_frame(),camera.world_to_screen_point(self.rect.topleft))
 
