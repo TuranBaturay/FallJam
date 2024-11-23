@@ -1,83 +1,56 @@
 import batFramework as bf
 import pygame
 from .gameConstants import GameConstants as gconst
-from math import ceil
+from math import ceil, cos, sin
 import random
-import numpy as np
-
-def generate_simple_3d_noise(width, height, depth, scale=0.1, seed=None):
-    """
-    Generate 3D noise manually without external libraries.
-
-    Args:
-        width (int): Width of the noise array.
-        height (int): Height of the noise array.
-        depth (int): Depth of the noise array.
-        scale (float): Scale factor for noise (affects smoothness).
-        seed (int | None): Seed for random number generator.
-
-    Returns:
-        np.ndarray: 3D array of noise values.
-    """
-    if seed is not None:
-        random.seed(seed)
-        np.random.seed(seed)
-
-    noise_data = np.zeros((width, height, depth), dtype=np.float32)
-
-    for z in range(depth):
-        for y in range(height):
-            for x in range(width):
-                # Generate pseudo-random noise, scaled by coordinates
-                noise_value = (
-                    random.uniform(0, 1)
-                    * (np.sin(x * scale) + np.cos(y * scale) + np.sin(z * scale))
-                )
-                noise_data[x, y, z] = noise_value
-
-    return noise_data
 
 
+
+class FireFly(bf.Drawable):
+    def __init__(self,spawn:tuple[float,float]):
+        super().__init__(size=(8,8),convert_alpha = True)
+        self.spawn = spawn
+        # pygame.draw.circle(self.surface,"white",(4,4),4)
+
+
+    def draw(self,camera):
+        if not camera.intersects(self.rect):
+            return
+        point = self.rect.move(4*cos(pygame.time.get_ticks()/200),0).center
+        pygame.draw.circle(camera.surface,"white",camera.world_to_screen_point(point),4)
 
 class Tile:
-    def __init__(self,index):
+    def __init__(self,index,height_delta:float = 0):
         self.index = index
+        self.height_delta:float = height_delta
+        
 class IsoLevel(bf.Drawable):
-    def __init__(self,width,height,depth):
+    def __init__(self,width,height):
         super().__init__()
         self.width = width
         self.height = height
-        self.depth = depth
         self.player : bf.Character = None
-        self.tiles = [[{} for _ in range(width)] for _ in range(height)]
+        self.tiles = [[None for _ in range(width)] for _ in range(height)]
         self.tile_surf = img = bf.ResourceManager().get_image("graphics/tiles/cube.png",True)
 
-
     def iterate(self):
-        for z in range(self.depth,-1,-1):
-            for diag in range(self.width + self.height - 1):  # Total number of diagonals
-                for x in range(max(0, diag - self.height + 1), min(self.width, diag + 1)):
-                    y = diag - x
-                    try :
-                        value = self.tiles[y][x][z]
-                        yield ((x,y,z),value)
-                    except KeyError:
-                        continue
+        for diag in range(self.width + self.height - 1):  # Total number of diagonals
+            for x in range(max(0, diag - self.height + 1), min(self.width, diag + 1)):
+                y = diag - x
+                value = self.tiles[y][x]
+                yield ((x,y),value)
 
 
 
-    def get_at(self,x,y,z):
+    def get_at(self,x,y):
         if x < 0 or x >= self.width:return
         if y < 0 or y >= self.height:return
-        if z in self.tiles[y][x]:
-            return self.tiles[y][x][z]
-        else :
-            return None
+        return self.tiles[y][x]
 
-    def set_at(self,x,y,z,tile_index):
+    def set_at(self,x,y,tile_index):
         if x < 0 or x >= self.width:return
         if y < 0 or y >= self.height:return
-        self.tiles[y][x][z]=Tile(tile_index)
+        self.tiles[y][x]=Tile(tile_index,random.randint(-2,2))
 
 
 
@@ -89,22 +62,13 @@ class IsoLevel(bf.Drawable):
         screen_y = (x + y) * gconst.TILE_HEIGHT // 2 - z * gconst.TILE_HEIGHT
         return screen_x, screen_y
 
-    def grid_to_iso(self,x, y, height):
+    def grid_to_iso(self,x, y):
         tile_width = gconst.TILE_WIDTH
         tile_height = gconst.TILE_HEIGHT
         screen_x = (x - y) * (tile_width // 2)
-        screen_y = (x + y) * (tile_height // 2) - height * tile_height
+        screen_y = (x + y) * (tile_height // 2) 
         return screen_x, screen_y
 
-    def iterate(self):
-        for z in range(self.depth):
-            for diag in range(self.width + self.height - 1):  # Total number of diagonals
-                for x in range(max(0, diag - self.height + 1), min(self.width, diag + 1)):
-                    y = diag - x
-                    if z not in self.tiles[y][x]:
-                        yield((x,y,z),None)
-                        continue
-                    yield ((x,y,z),self.tiles[y][x][z])
 
     def generate_draw_list(self, camera: bf.Camera):
         """
@@ -119,88 +83,30 @@ class IsoLevel(bf.Drawable):
         player_round = (
             round(self.player.grid_position[0]),
             round(self.player.grid_position[1]),
-            round(self.player.grid_position[2])
         )
-        max_depth = self.depth - 1
 
         for value in self.iterate():
-            (x, y, z), tile = value
-            pos = self.grid_to_iso(x, y, z)
+            (x, y) , tile = value
+            pos = self.grid_to_iso(x, y)
 
             # Yield tile surface and screen position
             if tile:
-                if not (z < max_depth and any(k > z for k in self.tiles[y][x].keys())):
-                    yield (self.tile_surf, camera.world_to_screen_point(pos))
+                new_pos = (pos[0],pos[1]+tile.height_delta)
+                if camera.intersects((*new_pos,gconst.TILE_WIDTH,gconst.TILE_HEIGHT)):
+                    yield (self.tile_surf, camera.world_to_screen_point(new_pos))
 
-            if player_round[:2] == (x, y):
+            if player_round == (x, y):
                 yield from self.player._my_draw(camera)
 
 
-    def generate_draw_list_with_info(self, camera: bf.Camera):
-        """
-        Generate a draw list optimized to avoid drawing tiles completely obscured by others.
-
-        Args:
-            camera (bf.Camera): The camera to transform world coordinates to screen coordinates.
-
-        Yields:
-            tuple: (surface, screen_position) for visible tiles.
-        """
-        player_round = (
-            round(self.player.grid_position[0]),
-            round(self.player.grid_position[1]),
-            round(self.player.grid_position[2])
-        )
-        max_depth = self.depth - 1
-
-        for value in self.iterate():
-            (x, y, z), tile = value
-            pos = self.grid_to_iso(x, y, z)
-
-            # Yield tile surface and screen position
-            if tile:
-                if not (z < max_depth and any(k > z for k in self.tiles[y][x].keys())):
-                    # yield (self.tile_surf, camera.world_to_screen_point(pos))
-                    if camera.intersects((*pos,*self.tile_surf.get_size())):
-                        yield (self.tile_surf, camera.world_to_screen_point(pos),(x,y,z))
-
-            if player_round[:2] == (x, y):
-                # yield from self.player._my_draw(camera)
-                yield from self.player._my_draw_with_info(camera)
 
     def draw(self, camera):
-        # print("-" * 30)
-        # Generate the draw list with additional information (tile, position, z-value).
-        draw_list = list(self.generate_draw_list_with_info(camera))
-
-        # Sort the tiles by z-layer (ascending).
-        draw_list.sort(key=lambda val: val[2][2])  # Sort by the z-value.
-        old_z = draw_list[0][2][2]
-        counter = 0
-        for val in draw_list:
-            tile_surface, position, pos3d = val
-            if old_z != pos3d[2]:
-                # Apply shadow effect for this z-layer.
-                camera.surface.fill((30, 10*pos3d[1], 10*pos3d[1]), special_flags=pygame.BLEND_RGB_SUB)
-                old_z = pos3d[2]
-
-            # Draw the tile.
-            camera.surface.blit(tile_surface, position)
-
-            if pos3d == self.player.grid_position:
-                pygame.draw.rect(camera.surface,"white",(*camera.world_to_screen_point(self.grid_to_iso(*pos3d)),10,10))
-            else:
-                pygame.draw.rect(camera.surface,"yellow",(*camera.world_to_screen_point(self.grid_to_iso(*pos3d)),10,10))
-            counter += 1
-            # Debug output to verify z-layer drawing order.
-            # print(z_value)
-
-        # camera.surface.fblits(self.generate_draw_list(camera))
+        camera.surface.fblits(self.generate_draw_list(camera))
 
 class Player(bf.Character):
     def __init__(self,level:IsoLevel):
         super().__init__()
-        self.speed = 8#1.3
+        self.speed = 2
         self.actions = bf.WASDControls()
         self.height = -0.7
         for a in self.actions:
@@ -215,7 +121,7 @@ class Player(bf.Character):
             bf.Action("fly-down").add_key_control(pygame.K_2).set_holding(),
             )
 
-        self.grid_position = [0,0,0]
+        self.grid_position = [2,2]
         self.level = level
 
     def set_height(self,height):
@@ -236,93 +142,120 @@ class Player(bf.Character):
     def do_reset_actions(self):
         self.actions.reset()
     def do_update(self, dt):
-        old_pos = self.grid_position.copy()
-        if self.actions.is_active("up"):
-            self.grid_position[1] = max(0,self.grid_position[1]-self.speed*dt)
-        if self.actions.is_active("down"):
-            self.grid_position[1] = min(self.level.height-1,self.grid_position[1] + self.speed*dt)
-        if self.actions.is_active("left"):
-            self.grid_position[0] = max(0,self.grid_position[0]-self.speed*dt)
-        if self.actions.is_active("right"):
-            self.grid_position[0] = min(self.level.width-1,self.grid_position[0] + self.speed*dt)
-        if self.actions.is_active("fly-up"):
-            self.grid_position[2] +=self.speed*dt
-        if self.actions.is_active("fly-down"):
-            self.grid_position[2] -=self.speed*dt
-                    
-        val = self.level.get_at(*[int(i) for i in self.grid_position])
-        while (val is not None):
-            self.grid_position[2] = int(self.grid_position[2])+1
-            val = self.level.get_at(*[int(i) for i in self.grid_position])
-        self.grid_position[2] -= 1        
-        self.rect.midbottom = self.level.grid_to_iso(*self.grid_position[:2],self.grid_position[2]+self.height)
+        self.velocity.update(0,0)
 
+        
+        if self.actions.is_active("left"):
+            self.velocity.x -=1
+        elif self.actions.is_active("right"):
+            self.velocity.x += 1
+
+        if self.velocity:
+            self.velocity.normalize_ip()
+        self.velocity *= dt * self.speed
+
+        self.move_by_check_collision(self.velocity.x,0)
+
+
+        if self.actions.is_active("up") and not self.velocity.x:
+            self.velocity.y -=1
+        elif self.actions.is_active("down") and not self.velocity.x:
+            self.velocity.y += 1        
+
+        if self.velocity:
+            self.velocity.normalize_ip()
+        self.velocity *= dt * self.speed
+        
+        self.move_by_check_collision(0,self.velocity.y)
+        
+        
+    def move_by_check_collision(self,x,y):
+        old_pos = self.grid_position.copy()
+        self.grid_position[0] +=x
+        self.grid_position[1] +=y
+
+        val = self.level.get_at(*[round(i) for i in self.grid_position])
+        if val is None:
+            self.grid_position =  old_pos
+            self.velocity.update(0,0)
+        res = self.get_neighboring()
+        if any(v ==None for v in res):
+            self.grid_position =  old_pos
+            self.velocity.update(0,0)
+            
+        self.center_to_tile()     
+
+    def get_neighboring(self)->list[Tile|None]:
+        res = []
+        for c in [(-0.25,0),(0,-0.25),(0.25,0),(0.25,0.25)]:
+            res.append(
+                self.level.get_at(
+                    round(self.grid_position[0]+c[0]),
+                    round(self.grid_position[1]+c[1])
+                )
+            )
+        return res
+       
+    def center_to_tile(self):
+        iso_pos = self.level.grid_to_iso(*self.grid_position)
+        self.rect.midbottom = (
+            iso_pos[0] + gconst.TILE_WIDTH //2,
+            iso_pos[1] +gconst.TILE_HEIGHT-16,
+        )
 
     def _my_draw(self,camera:bf.Camera):
-        self.rect.midbottom = self.level.grid_to_iso(*self.grid_position[:2],self.grid_position[2]+self.height)
-        # self.rect.move_ip(gconst.TILE_WIDTH//2,gconst.TILE_HEIGHT//2 - 16)
-        yield (self.get_current_frame(),camera.world_to_screen_point(self.rect.topleft))
-        # camera.surface.blit(self.get_current_frame(),camera.world_to_screen_point(self.rect.topleft))
-        
-    def _my_draw_with_info(self,camera:bf.Camera):
-        self.rect.midbottom = self.level.grid_to_iso(*self.grid_position[:2],self.grid_position[2]+self.height)
-        # self.rect.move_ip(gconst.TILE_WIDTH//2,gconst.TILE_HEIGHT//2 - 16)
-        yield (self.get_current_frame(),camera.world_to_screen_point(self.rect.topleft),self.grid_position)
-        # camera.surface.blit(self.get_current_frame(),camera.world_to_screen_point(self.rect.topleft))
-
+        self.center_to_tile()
+        # screen_pos = camera.world_to_screen_point((
+        #     self.rect.centerx,
+        #     self.rect.bottom + self.height * gconst.TILE_HEIGHT
+        # ))
+        yield (self.get_current_frame(), camera.world_to_screen_point(self.rect.topleft))
     def draw(self, camera):
-        pass
+        return
 
 class GameScene(bf.Scene):
     def do_when_added(self):
         self.set_clear_color(gconst.CLAY)
-        self.add_actions(bf.Action("back").add_key_control(pygame.K_ESCAPE),*bf.DirectionalKeyControls())
-        self.level = IsoLevel(20,20,5)
+        self.add_actions(
+            bf.Action("back").add_key_control(pygame.K_ESCAPE),*bf.DirectionalKeyControls(),
+            bf.Action("spawn").add_key_control(pygame.K_SPACE),
 
-
-        # Assuming noise_array_normalized is the generated 3D noise array
-        noise_array_normalized = generate_simple_3d_noise(20, 20, 5, scale=0.1, seed=42)
-        noise_array_normalized = (noise_array_normalized - noise_array_normalized.min()) / (noise_array_normalized.max() - noise_array_normalized.min())
+        )
+        self.level = IsoLevel(20,20)
 
         # Your IsoLevel instance
 
-        # # Iterate over the 3D noise array and call set_at
-        width, height, depth = noise_array_normalized.shape
-        for z in range(depth):
-            for y in range(height):
-                for x in range(width):
-                    # Use the noise value as the "value" for set_at
-                    value = noise_array_normalized[x, y, z]
-                    if z == 0:
-                        value = 0
-                    if value < 0.5:
-                        self.level.set_at(x, y, z, 0)
-
+        width = height = 64
+        for y in range(height):
+            for x in range(width):
+                value = random.random()
+                if value < 0.8:
+                    self.level.set_at(x, y, 0)
 
 
         self.add_world_entity(self.level)
         self.player  = Player(self.level)
         self.level.player = self.player
         self.camera.set_follow_point_func(lambda :self.player.rect.center)
-        self.camera.set_follow_speed(0.8)
-        self.camera.set_follow_damping(2)
+        self.camera.set_follow_speed(1)
+        self.camera.set_follow_damping(10)
         # self.camera.zoom_by(-0.5)
         self.add_world_entity(self.player)
         self.camera.set_center(*self.player.rect.center)
         self.fx_surf = pygame.Surface(self.camera.rect.size)
         
 
-
-
-
-        # bf.Timer(1,lambda : print("Hello pygame-ce"),True).start()
-
-
-        d = bf.BasicDebugger()
-        d.add_dynamic("grid",lambda : [int(i) for i in self.player.grid_position])
+        d = bf.FPSDebugger()
+        d.add_dynamic("grid",lambda : [round(i) for i in self.player.grid_position])
+        d.add_dynamic("vel",lambda : [round(i,3) for i in self.player.velocity])
         self.root.add(d)
-        # self.root.add(bf.Slider("height",0).set_range(-5,5).add_constraints(bf.AnchorTopRight()).set_modify_callback(self.player.set_height))
+
+        lb_fireflies = bf.Label(f"{0}/{10}")
+        self.root.add(lb_fireflies)
         
+
+    def add_firefly(self,firefly):
+        self.add_world_entity(firefly)
 
     def do_update(self, dt):
         if self.actions.is_active("back"):
@@ -336,15 +269,13 @@ class GameScene(bf.Scene):
             self.camera.move_by(0,-60*dt)
         if self.actions.is_active("down"):
             self.camera.move_by(0,60*dt)
+        if self.actions.is_active("spawn"):
+            self.add_firefly(FireFly(self.player.rect.center))
 
 
     def do_post_world_draw(self, surface):
-        pass
-        # self.fx_surf.fill((0,0,0))
-        # bf.utils.draw_spotlight(self.fx_surf,(0,0,0), (200,200,200), 64,surface.get_height(),self.camera.world_to_screen_point(self.player.rect.center))
-        # tmp = pygame.transform.box_blur(self.fx_surf,1)
-        # surface.blit(tmp,(0,0),special_flags=pygame.BLEND_SUB)
-        # self.level.get_indicators(self.camera)
-        # for val in self.level.indicators:
-        #     pos,color = val
-        #     pygame.draw.circle(surface,color,(pos[0]+gconst.TILE_WIDTH//2,pos[1]+gconst.TILE_HEIGHT//2),6)
+        return
+        self.fx_surf.fill((0,0,0))
+        bf.utils.draw_spotlight(self.fx_surf,(0,0,0), (200,200,200), 64,surface.get_height(),self.camera.world_to_screen_point(self.player.rect.center))
+        tmp = pygame.transform.box_blur(self.fx_surf,1)
+        surface.blit(tmp,(0,0),special_flags=pygame.BLEND_SUB)

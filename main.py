@@ -16,6 +16,7 @@ from script import OptionsScene,TitleScene,MainStyle,GameScene
 
 bf.init(
     (240,180),
+    # (64,64),
     pygame.SCALED,
     default_font="fonts/batFont.ttf",
     default_font_size=8,
