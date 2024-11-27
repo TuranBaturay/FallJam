@@ -2,7 +2,7 @@ import batFramework as bf
 import pygame
 import pygame.freetype
 from .gameConstants import GameConstants as gconst
-from math import ceil, cos, sin
+from math import ceil, cos, sin,sqrt
 import random
 from .mainStyle import decorate
 from typing import Generator
@@ -376,7 +376,6 @@ class GameScene(bf.Scene):
             bf.Action("toggle_collisions").add_key_control(pygame.K_KP9)
 
         )
-        bf.ResourceManager().set_sharedVar("collision",False)
 
         self.level = IsoLevel(64,64)
 
@@ -406,7 +405,7 @@ class GameScene(bf.Scene):
         self.add_world_entity(self.player)
         self.camera.set_center(*self.player.rect.center)
         self.fx_surf = pygame.Surface(self.camera.rect.size)
-        
+        self.caught = 0
 
         d = bf.FPSDebugger()
         d.add_dynamic("grid",lambda : [round(i) for i in self.player.grid_position])
@@ -417,7 +416,7 @@ class GameScene(bf.Scene):
 
         lb_fireflies = bf.Label(f"Fireflies {0}/{len(self.get_by_tags("firefly"))}")
         decorate(lb_fireflies)
-        bf.SceneTimer(0.2,lambda : lb_fireflies.set_text(f"Fireflies {0}/{len(self.get_by_tags("firefly"))}"),True,"game").start()
+        bf.SceneTimer(0.2,lambda : lb_fireflies.set_text(f"Fireflies {self.caught}/{len(self.get_by_tags("firefly"))}"),True,"game").start()
 
         frame = bf.Shape().set_draw_mode(bf.drawMode.TEXTURED).set_texture(bf.ResourceManager().get_image("graphics/images/frame2.png",True)).add_constraints(bf.FillX(),bf.FillY())
         frame.add(lb_fireflies.add_constraints(bf.MarginLeft(4),bf.MarginTop(4)))
@@ -447,13 +446,32 @@ class GameScene(bf.Scene):
         for f in self.get_by_tags("firefly"):
             self.remove_world_entity(f)
 
-        for f in data["fireflies"]:
-            self.add_world_entity(FireFly(f))
-        self.level.load(data["level"])
+        # for f in data["fireflies"]:
+            # self.add_world_entity(FireFly(f))
 
+        count = 64
+        self.level.load(data["level"])
+        while count > 0:
+            for i in self.level.iterate():
+                if i is not None:
+                    if random.randint(1,4) ==1 and i[1].index == 1:
+                        self.add_world_entity(FireFly(self.level.iso_to_world(*i[0],-i[1].height_delta)))
+                        count -= 1
+                if count <=0:
+                    break
+
+    def distance_to_rect(self,r1,r2):
+        center1 , center2 = r1.center, r2.center
+        return sqrt((center2[0] - center1[0])**2 + (center2[1] - center1[1])**2)
     def catch(self):
         bf.AudioManager().play_sound("firefly")
+        flist = [f for f in self.get_by_tags("firefly") if self.distance_to_rect(f.rect,self.player.rect) < 64]
+        for f in flist:
+            self.remove_world_entity(f)
+            self.caught+=1
         
+        if self.caught == 64:
+            self.manager.transition_to_scene("endscreen")
 
     def spell(self):
         if self.player.start_spell():
@@ -525,10 +543,11 @@ class GameScene(bf.Scene):
 
 
     def init(self):
-        self.player.grid_position = [1,1]
-        # self.load("1.json")
+        self.player.grid_position = [1.4,1.4]
+        self.load("1")
         self.player.spell_counter = self.player.max_spell
         self.magic_row.add(*[bf.Image().from_path("graphics/images/magic.png").add_tags("magic") for _ in range(self.player.max_spell)])
         bf.ResourceManager().set_sharedVar("end_type","win")
         self.player.set_animation("idle_right")
-
+        self.caught = 0
+        bf.ResourceManager().set_sharedVar("collision",True)
