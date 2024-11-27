@@ -5,16 +5,12 @@
 # }
 # ///
 
-
-
-
 import batFramework as bf
 import pygame
 
-from script import OptionsScene,TitleScene,MainStyle,GameScene
-
-
+from script import * 
 bf.init(
+    # (640,480),
     (240,180),
     # (64,64),
     pygame.SCALED,
@@ -30,7 +26,11 @@ if __name__ == "__main__":
     bf.Manager(
         TitleScene("title"),    
         OptionsScene("options"),  
-        GameScene("game")  
+        GameScene("game"),
+        ConfirmScene(),
+        EndScreen("endscreen")
     ).run()
-
-
+    # bf.Manager(
+    #     ConfirmScene()
+    # ).run()
+ 
