@@ -1,9 +1,3 @@
-# /// script
-# requires-python = ">=3.11"
-# dependencies = {
-#   "batFramework": "1.0.9a1"
-# }
-# ///
 
 import batFramework as bf
 import pygame

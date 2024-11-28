@@ -1,0 +1,2 @@
+batFramework==1.0.9a3
+pygame-ce==2.5.2
